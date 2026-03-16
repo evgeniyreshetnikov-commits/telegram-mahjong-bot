@@ -134,6 +134,7 @@ const els = {
   appShell: document.getElementById("appShell"),
   boardViewport: document.getElementById("boardViewport"),
   boardCanvas: document.getElementById("boardCanvas"),
+  boardHitLayer: document.getElementById("boardHitLayer"),
   score: document.getElementById("score"),
   moves: document.getElementById("moves"),
   tilesLeft: document.getElementById("tilesLeft"),
@@ -439,6 +440,7 @@ function startNewGame(preserveSettings = true) {
   updateStats();
   setMessage(`Новая партия: ${getLayoutById(state.layout).name}, ${state.board.length} плиток.`, "success");
   drawSoon();
+  updateHitLayer();
   queueSave();
 }
 
@@ -455,9 +457,45 @@ function resizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.board.length) fitBoard(false);
   drawSoon();
+  updateHitLayer();
 }
 
 function clearHint() { state.hintedPair = []; }
+
+function updateHitLayer() {
+  const layer = els.boardHitLayer;
+  if (!layer) return;
+  const frag = document.createDocumentFragment();
+  layer.innerHTML = "";
+  const visible = state.board.filter((t) => !t.removed).slice().sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x);
+  for (const tile of visible) {
+    const pos = tileToPixel(tile);
+    const left = pos.x * state.camera.zoom + state.camera.x;
+    const top = pos.y * state.camera.zoom + state.camera.y;
+    const w = TILE_W * state.camera.zoom;
+    const h = TILE_H * state.camera.zoom;
+    if (left + w < -20 || top + h < -20 || left > (els.boardViewport.clientWidth + 20) || top > (els.boardViewport.clientHeight + 20)) continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const free = isFreeTile(tile);
+    const selected = state.selectedId === tile.id;
+    const hinted = state.hintedPair.includes(tile.id);
+    btn.className = `board-hit-tile ${free ? "free" : "blocked"}${selected ? " selected" : ""}${hinted ? " hinted" : ""}`;
+    btn.style.left = `${left}px`;
+    btn.style.top = `${top}px`;
+    btn.style.width = `${w}px`;
+    btn.style.height = `${h}px`;
+    btn.style.zIndex = `${100 + tile.z * 10}`;
+    btn.setAttribute("aria-label", tile.face.label);
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      selectTile(tile.id);
+    });
+    frag.appendChild(btn);
+  }
+  layer.appendChild(frag);
+}
 
 function selectTile(tileId) {
   const tile = state.board.find((t) => t.id === tileId && !t.removed);
@@ -470,6 +508,7 @@ function selectTile(tileId) {
     state.selectedId = tileId;
     setMessage(`Выбрана плитка ${tile.face.label}.`, "default");
     drawSoon();
+    updateHitLayer();
     queueSave();
     return;
   }
@@ -477,6 +516,7 @@ function selectTile(tileId) {
     state.selectedId = null;
     setMessage("Выбор снят.", "default");
     drawSoon();
+    updateHitLayer();
     queueSave();
     return;
   }
@@ -484,6 +524,7 @@ function selectTile(tileId) {
   if (!first || !isFreeTile(first)) {
     state.selectedId = tileId;
     drawSoon();
+    updateHitLayer();
     queueSave();
     return;
   }
@@ -508,6 +549,7 @@ function selectTile(tileId) {
   }
   updateStats();
   drawSoon();
+  updateHitLayer();
   queueSave();
 }
 
@@ -528,6 +570,7 @@ function useHint() {
   updateStats();
   setMessage(`Подсказка: попробуй пару ${a.face.label}.`, "success");
   drawSoon();
+  updateHitLayer();
   queueSave();
 }
 
@@ -624,6 +667,7 @@ function updatePinch() {
   state.camera.x = center.x - gesture.pinchWorldCenter.x * zoom;
   state.camera.y = center.y - gesture.pinchWorldCenter.y * zoom;
   drawSoon();
+  updateHitLayer();
 }
 
 function zoomBy(factor) {
@@ -635,6 +679,7 @@ function zoomBy(factor) {
   state.camera.x = cx - world.x * state.camera.zoom;
   state.camera.y = cy - world.y * state.camera.zoom;
   drawSoon();
+  updateHitLayer();
   queueSave();
 }
 
@@ -673,19 +718,22 @@ function onTouchMove(ev) {
 
 function onTouchEnd(ev) {
   const ended = [];
+  const wasMoved = gesture.moved;
   for (const touch of ev.changedTouches) {
     const pt = gesture.active.get(touch.identifier);
     if (pt) ended.push(pt);
     gesture.active.delete(touch.identifier);
   }
-  if (gesture.active.size === 0 && ended[0]) {
-    endTap(ended[0].x, ended[0].y);
+  if (gesture.active.size === 0) {
     gesture.dragging = false;
   } else if (gesture.active.size === 1) {
     const only = [...gesture.active.values()][0];
     beginDrag(only.x, only.y);
   }
-  queueSave();
+  if (wasMoved) {
+    updateHitLayer();
+    queueSave();
+  }
   ev.preventDefault();
 }
 
@@ -703,10 +751,12 @@ function onMouseMove(ev) {
 
 function onMouseUp(ev) {
   if (!gesture.dragging) return;
-  const p = pointFromClient(ev.clientX, ev.clientY);
-  endTap(p.x, p.y);
+  const wasMoved = gesture.moved;
   gesture.dragging = false;
-  queueSave();
+  if (wasMoved) {
+    updateHitLayer();
+    queueSave();
+  }
 }
 
 function onWheel(ev) {
@@ -820,18 +870,18 @@ els.zoomOutBtn.addEventListener("click", () => zoomBy(0.88));
 els.recenterBtn.addEventListener("click", () => {
   fitBoard(false);
   drawSoon();
+  updateHitLayer();
   queueSave();
 });
 
-els.boardCanvas.addEventListener("click", onCanvasClick);
-els.boardCanvas.addEventListener("touchstart", onTouchStart, { passive: false });
-els.boardCanvas.addEventListener("touchmove", onTouchMove, { passive: false });
-els.boardCanvas.addEventListener("touchend", onTouchEnd, { passive: false });
-els.boardCanvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
-els.boardCanvas.addEventListener("mousedown", onMouseDown);
+els.boardViewport.addEventListener("wheel", onWheel, { passive: false });
+els.boardHitLayer.addEventListener("touchstart", onTouchStart, { passive: false });
+els.boardHitLayer.addEventListener("touchmove", onTouchMove, { passive: false });
+els.boardHitLayer.addEventListener("touchend", onTouchEnd, { passive: false });
+els.boardHitLayer.addEventListener("touchcancel", onTouchEnd, { passive: false });
+els.boardHitLayer.addEventListener("mousedown", onMouseDown);
 window.addEventListener("mousemove", onMouseMove);
 window.addEventListener("mouseup", onMouseUp);
-els.boardCanvas.addEventListener("wheel", onWheel, { passive: false });
 window.addEventListener("resize", resizeCanvas);
 
 (function init() {
@@ -847,4 +897,5 @@ window.addEventListener("resize", resizeCanvas);
   }
   resizeCanvas();
   drawSoon();
+  updateHitLayer();
 })();
