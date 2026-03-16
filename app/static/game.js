@@ -4,7 +4,7 @@ if (tg) {
   tg.expand();
 }
 
-const STORAGE_KEY = "telegram-mahjong-canvas-v12";
+const STORAGE_KEY = "telegram-mahjong-canvas-v14";
 const TILE_W = 58;
 const TILE_H = 76;
 const STEP_X = 30;
@@ -487,11 +487,13 @@ function updateHitLayer() {
     btn.style.height = `${h}px`;
     btn.style.zIndex = `${100 + tile.z * 10}`;
     btn.setAttribute("aria-label", tile.face.label);
-    btn.addEventListener("click", (ev) => {
+    const handleTileTap = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       selectTile(tile.id);
-    });
+    };
+    btn.addEventListener("click", handleTileTap);
+    btn.addEventListener("touchend", handleTileTap, { passive: false });
     frag.appendChild(btn);
   }
   layer.appendChild(frag);
@@ -683,80 +685,78 @@ function zoomBy(factor) {
   queueSave();
 }
 
-function onCanvasClick(ev) {
-  const p = pointFromClient(ev.clientX, ev.clientY);
-  endTap(p.x, p.y);
-}
-
 function onTouchStart(ev) {
-  if (ev.target !== els.boardCanvas) return;
-  for (const touch of ev.changedTouches) {
-    gesture.active.set(touch.identifier, pointFromClient(touch.clientX, touch.clientY));
-  }
-  if (gesture.active.size === 1) {
-    const only = [...gesture.active.values()][0];
-    beginDrag(only.x, only.y);
-  } else if (gesture.active.size === 2) {
+  if (ev.touches.length === 2) {
+    gesture.active.clear();
+    for (const touch of ev.touches) {
+      gesture.active.set(touch.identifier, pointFromClient(touch.clientX, touch.clientY));
+    }
     startPinch();
+    ev.preventDefault();
+    return;
   }
-  ev.preventDefault();
+
+  const targetIsTile = ev.target && ev.target.classList && ev.target.classList.contains("board-hit-tile");
+  if (targetIsTile) return;
+
+  if (ev.touches.length === 1) {
+    const touch = ev.touches[0];
+    const p = pointFromClient(touch.clientX, touch.clientY);
+    gesture.active.clear();
+    gesture.active.set(touch.identifier, p);
+    beginDrag(p.x, p.y);
+    ev.preventDefault();
+  }
 }
 
 function onTouchMove(ev) {
-  if (!gesture.active.size) return;
-  for (const touch of ev.changedTouches) {
-    gesture.active.set(touch.identifier, pointFromClient(touch.clientX, touch.clientY));
-  }
-  if (gesture.active.size === 1) {
-    const only = [...gesture.active.values()][0];
-    updateDrag(only.x, only.y);
-  } else if (gesture.active.size === 2) {
+  if (ev.touches.length === 2) {
+    gesture.active.clear();
+    for (const touch of ev.touches) {
+      gesture.active.set(touch.identifier, pointFromClient(touch.clientX, touch.clientY));
+    }
     updatePinch();
+    updateHitLayer();
+    ev.preventDefault();
+    return;
   }
+
+  if (!gesture.dragging || ev.touches.length !== 1) return;
+  const touch = ev.touches[0];
+  const p = pointFromClient(touch.clientX, touch.clientY);
+  updateDrag(p.x, p.y);
+  updateHitLayer();
   ev.preventDefault();
 }
 
 function onTouchEnd(ev) {
-  const ended = [];
-  const wasMoved = gesture.moved;
-  for (const touch of ev.changedTouches) {
-    const pt = gesture.active.get(touch.identifier);
-    if (pt) ended.push(pt);
-    gesture.active.delete(touch.identifier);
-  }
-  if (gesture.active.size === 0) {
+  if (gesture.dragging || gesture.active.size) {
     gesture.dragging = false;
-  } else if (gesture.active.size === 1) {
-    const only = [...gesture.active.values()][0];
-    beginDrag(only.x, only.y);
-  }
-  if (wasMoved) {
-    updateHitLayer();
+    gesture.active.clear();
     queueSave();
   }
-  ev.preventDefault();
 }
 
 function onMouseDown(ev) {
   if (ev.button !== 0) return;
+  const targetIsTile = ev.target && ev.target.classList && ev.target.classList.contains("board-hit-tile");
+  if (targetIsTile) return;
   const p = pointFromClient(ev.clientX, ev.clientY);
   beginDrag(p.x, p.y);
+  ev.preventDefault();
 }
 
 function onMouseMove(ev) {
   if (!gesture.dragging) return;
   const p = pointFromClient(ev.clientX, ev.clientY);
   updateDrag(p.x, p.y);
+  updateHitLayer();
 }
 
 function onMouseUp(ev) {
   if (!gesture.dragging) return;
-  const wasMoved = gesture.moved;
   gesture.dragging = false;
-  if (wasMoved) {
-    updateHitLayer();
-    queueSave();
-  }
+  queueSave();
 }
 
 function onWheel(ev) {
@@ -875,11 +875,11 @@ els.recenterBtn.addEventListener("click", () => {
 });
 
 els.boardViewport.addEventListener("wheel", onWheel, { passive: false });
-els.boardHitLayer.addEventListener("touchstart", onTouchStart, { passive: false });
-els.boardHitLayer.addEventListener("touchmove", onTouchMove, { passive: false });
-els.boardHitLayer.addEventListener("touchend", onTouchEnd, { passive: false });
-els.boardHitLayer.addEventListener("touchcancel", onTouchEnd, { passive: false });
-els.boardHitLayer.addEventListener("mousedown", onMouseDown);
+els.boardViewport.addEventListener("touchstart", onTouchStart, { passive: false });
+els.boardViewport.addEventListener("touchmove", onTouchMove, { passive: false });
+els.boardViewport.addEventListener("touchend", onTouchEnd, { passive: false });
+els.boardViewport.addEventListener("touchcancel", onTouchEnd, { passive: false });
+els.boardViewport.addEventListener("mousedown", onMouseDown);
 window.addEventListener("mousemove", onMouseMove);
 window.addEventListener("mouseup", onMouseUp);
 window.addEventListener("resize", resizeCanvas);

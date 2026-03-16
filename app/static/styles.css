@@ -97,10 +97,10 @@ button { font: inherit; }
 }
 
 .board-hit-layer {
-  position:absolute; inset:0; z-index:2; touch-action:none; }
+  position:absolute; inset:0; z-index:2; touch-action:manipulation; }
 .board-hit-tile {
   position:absolute; border:0; background:transparent; padding:0; margin:0; cursor:pointer;
-  border-radius:12px; outline:none; -webkit-tap-highlight-color: transparent;
+  border-radius:12px; outline:none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
 }
 .board-hit-tile.free { pointer-events:auto; }
 .board-hit-tile.blocked { pointer-events:auto; }
