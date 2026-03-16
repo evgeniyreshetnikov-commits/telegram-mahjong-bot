@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Telegram Mahjong</title>
     <link rel="stylesheet" href="/static/styles.css" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -12,38 +12,14 @@
         <header class="topbar">
             <div>
                 <h1>Маджонг</h1>
-                <p>Telegram WebApp с режимами, фонами и раскладками</p>
+                <p>Shanghai Mahjong для Telegram</p>
             </div>
-            <button id="restartBtn" class="ghost-btn">Новая игра</button>
+            <div class="topbar-actions">
+                <button id="restartBtn" class="ghost-btn">Новая игра</button>
+            </div>
         </header>
 
-        <section class="control-panel">
-            <div class="panel-block">
-                <div class="panel-title-row">
-                    <h2>Режим игры</h2>
-                    <span id="difficultyBadge" class="chip-badge">Лёгкий</span>
-                </div>
-                <div id="difficultyControls" class="segmented"></div>
-            </div>
-
-            <div class="panel-block">
-                <div class="panel-title-row">
-                    <h2>Фон стола</h2>
-                    <span id="themeBadge" class="chip-badge">Classic Green</span>
-                </div>
-                <div id="themeControls" class="chip-grid"></div>
-            </div>
-
-            <div class="panel-block">
-                <div class="panel-title-row">
-                    <h2>Раскладка</h2>
-                    <span id="layoutBadge" class="chip-badge">Черепаха</span>
-                </div>
-                <div id="layoutControls" class="chip-grid"></div>
-            </div>
-        </section>
-
-        <section class="stats">
+        <section class="stats compact-stats">
             <div class="stat-card">
                 <span>Очки</span>
                 <strong id="score">0</strong>
@@ -53,7 +29,7 @@
                 <strong id="moves">0</strong>
             </div>
             <div class="stat-card">
-                <span>Осталось плиток</span>
+                <span>Осталось</span>
                 <strong id="tilesLeft">0</strong>
             </div>
             <div class="stat-card">
@@ -62,16 +38,20 @@
             </div>
         </section>
 
-        <section class="legend">
-            <p>
-                Собирай пары одинаковых свободных плиток. Теперь плитка свободна, только если её
-                <b>не перекрывает верхний слой</b> и у неё открыта <b>левая или правая сторона</b>.
-            </p>
-        </section>
-
-        <main>
-            <div class="board-shell">
-                <div id="board" class="board"></div>
+        <main class="game-main">
+            <div class="board-shell" id="boardShell">
+                <div class="board-toolbar">
+                    <div class="board-badges">
+                        <span id="difficultyBadge" class="chip-badge">Лёгкий</span>
+                        <span id="themeBadge" class="chip-badge">Classic Green</span>
+                        <span id="layoutBadge" class="chip-badge">Черепаха</span>
+                    </div>
+                </div>
+                <div class="board-viewport" id="boardViewport">
+                    <div class="board-stage" id="boardStage">
+                        <div id="board" class="board"></div>
+                    </div>
+                </div>
             </div>
             <div id="message" class="message"></div>
         </main>
@@ -80,6 +60,39 @@
             <button id="hintBtn" class="ghost-btn">Подсказка</button>
             <button id="sendResultBtn" class="primary-btn">Отправить результат в бот</button>
         </footer>
+
+        <details class="settings-panel" id="settingsPanel">
+            <summary>Настройки игры</summary>
+            <section class="control-panel">
+                <div class="panel-block">
+                    <div class="panel-title-row">
+                        <h2>Режим игры</h2>
+                    </div>
+                    <div id="difficultyControls" class="segmented"></div>
+                </div>
+
+                <div class="panel-block">
+                    <div class="panel-title-row">
+                        <h2>Фон стола</h2>
+                    </div>
+                    <div id="themeControls" class="chip-grid"></div>
+                </div>
+
+                <div class="panel-block">
+                    <div class="panel-title-row">
+                        <h2>Раскладка</h2>
+                    </div>
+                    <div id="layoutControls" class="chip-grid"></div>
+                </div>
+            </section>
+
+            <section class="legend">
+                <p>
+                    Собирай пары одинаковых свободных плиток. Плитка свободна, если её
+                    <b>не перекрывает верхний слой</b> и у неё открыта <b>левая или правая сторона</b>.
+                </p>
+            </section>
+        </details>
     </div>
 
     <script>

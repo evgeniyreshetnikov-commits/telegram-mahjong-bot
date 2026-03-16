@@ -173,6 +173,9 @@ const LAYOUTS = [
 ];
 
 const boardEl = document.getElementById("board");
+const boardShellEl = document.getElementById("boardShell");
+const boardViewportEl = document.getElementById("boardViewport");
+const boardStageEl = document.getElementById("boardStage");
 const scoreEl = document.getElementById("score");
 const movesEl = document.getElementById("moves");
 const tilesLeftEl = document.getElementById("tilesLeft");
@@ -525,7 +528,10 @@ function computeBoardBounds() {
   if (!activeTiles.length) {
     boardEl.style.width = "100%";
     boardEl.style.height = "420px";
-    return;
+    boardStageEl.style.width = "100%";
+    boardStageEl.style.height = "420px";
+    appShell.style.setProperty("--board-scale", "1");
+    return { width: 760, height: 420 };
   }
 
   const maxX = Math.max(...state.board.map((tile) => tile.x));
@@ -533,12 +539,32 @@ function computeBoardBounds() {
   const maxZ = Math.max(...state.board.map((tile) => tile.z));
   const width = (maxX / 2) * STEP_X + TILE_W + maxZ * LEVEL_OFFSET_X + 40;
   const height = (maxY / 2) * STEP_Y + TILE_H + maxZ * LEVEL_OFFSET_Y + 30;
-  boardEl.style.width = `${Math.max(width, 760)}px`;
-  boardEl.style.height = `${Math.max(height, 420)}px`;
+  const finalWidth = Math.max(width, 760);
+  const finalHeight = Math.max(height, 420);
+  boardEl.style.width = `${finalWidth}px`;
+  boardEl.style.height = `${finalHeight}px`;
+  return { width: finalWidth, height: finalHeight };
+}
+
+function fitBoardToViewport(bounds) {
+  const viewportWidth = boardViewportEl.clientWidth - 6;
+  const viewportHeight = boardViewportEl.clientHeight - 6;
+  if (!viewportWidth || !viewportHeight) return;
+
+  const widthScale = viewportWidth / bounds.width;
+  const heightScale = viewportHeight / bounds.height;
+  const isPhone = window.innerWidth <= 640;
+  const scale = Math.min(widthScale, heightScale, isPhone ? 0.96 : 1);
+  const safeScale = Math.max(scale, isPhone ? 0.42 : 0.6);
+
+  appShell.style.setProperty("--board-scale", String(safeScale));
+  boardStageEl.style.width = `${Math.max(bounds.width * safeScale, viewportWidth)}px`;
+  boardStageEl.style.height = `${Math.max(bounds.height * safeScale, viewportHeight)}px`;
 }
 
 function renderBoard() {
-  computeBoardBounds();
+  const bounds = computeBoardBounds();
+  fitBoardToViewport(bounds);
   boardEl.innerHTML = "";
   updateAvailablePairs();
 
@@ -715,3 +741,9 @@ if (restoreSavedProgress()) {
 } else {
   startNewGame({ preserveSettings: false });
 }
+
+
+window.addEventListener("resize", () => {
+  const bounds = computeBoardBounds();
+  fitBoardToViewport(bounds);
+});
