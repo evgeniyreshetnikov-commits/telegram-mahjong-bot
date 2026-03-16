@@ -4,7 +4,7 @@ if (tg) {
   tg.expand();
 }
 
-const STORAGE_KEY = "telegram-mahjong-canvas-v11";
+const STORAGE_KEY = "telegram-mahjong-canvas-v12";
 const TILE_W = 58;
 const TILE_H = 76;
 const STEP_X = 30;
@@ -153,12 +153,24 @@ const els = {
   recenterBtn: document.getElementById("recenterBtn"),
 };
 
-const ctx = els.boardCanvas.getContext("2d");
+const ctx = els.boardCanvas.getContext("2d", { alpha: true, desynchronized: true });
+let viewportRect = null;
+let rafPending = false;
+let saveTimer = null;
+let gesture = {
+  dragging: false,
+  moved: false,
+  startX: 0,
+  startY: 0,
+  startCamX: 0,
+  startCamY: 0,
+  active: new Map(),
+  pinchStartDistance: 0,
+  pinchStartZoom: 1,
+  pinchWorldCenter: { x: 0, y: 0 },
+};
 
 let state = createInitialState();
-let rafPending = false;
-let viewportRect = null;
-let pointerState = { pointers: new Map(), dragStart: null, mode: null, pinch: null };
 
 function createInitialState() {
   return {
@@ -173,7 +185,7 @@ function createInitialState() {
     finished: false,
     hintsLeft: DIFFICULTIES.easy.hints,
     availablePairs: 0,
-    boardBounds: { minX: 0, minY: 0, width: 400, height: 320 },
+    boardBounds: { minX: 0, minY: 0, width: 400, height: 300 },
     camera: { x: 0, y: 0, zoom: 1 },
     resumed: false,
     startedAt: Date.now(),
@@ -258,7 +270,9 @@ function buildSolvableBoard(layoutId) {
       const partner = free.find((t) => t.id !== a.id && Math.abs(t.x - a.x) + Math.abs(t.y - a.y) > 1) || free.find((t) => t.id !== a.id);
       if (!partner) break;
       order.push([a.id, partner.id]);
-      remaining.forEach((tile) => { if (tile.id === a.id || tile.id === partner.id) tile.removed = true; });
+      remaining.forEach((tile) => {
+        if (tile.id === a.id || tile.id === partner.id) tile.removed = true;
+      });
     }
     if (order.length === pairCount) solution = order;
   }
@@ -292,7 +306,7 @@ function fitBoard(resetZoom = true) {
   const bounds = state.boardBounds;
   const width = els.boardViewport.clientWidth || 320;
   const height = els.boardViewport.clientHeight || 420;
-  const fitZoom = clamp(Math.min((width - 24) / bounds.width, (height - 24) / bounds.height), MIN_ZOOM, 1.15);
+  const fitZoom = clamp(Math.min((width - 20) / bounds.width, (height - 20) / bounds.height), MIN_ZOOM, 1.05);
   if (resetZoom) state.camera.zoom = fitZoom;
   const zoom = state.camera.zoom;
   state.camera.x = width / 2 - (bounds.minX + bounds.width / 2) * zoom;
@@ -304,21 +318,30 @@ function setMessage(text, tone = "default") {
   els.message.dataset.tone = tone;
 }
 
+function queueSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveProgress, 120);
+}
+
 function saveProgress() {
-  const payload = {
-    difficulty: state.difficulty,
-    theme: state.theme,
-    layout: state.layout,
-    board: state.board,
-    selectedId: state.selectedId,
-    score: state.score,
-    moves: state.moves,
-    finished: state.finished,
-    hintsLeft: state.hintsLeft,
-    startedAt: state.startedAt,
-    camera: state.camera,
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  try {
+    const payload = {
+      difficulty: state.difficulty,
+      theme: state.theme,
+      layout: state.layout,
+      board: state.board,
+      selectedId: state.selectedId,
+      score: state.score,
+      moves: state.moves,
+      finished: state.finished,
+      hintsLeft: state.hintsLeft,
+      startedAt: state.startedAt,
+      camera: state.camera,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function restoreProgress() {
@@ -361,40 +384,43 @@ function renderControls() {
   els.difficultyControls.innerHTML = "";
   Object.values(DIFFICULTIES).forEach((d) => {
     const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = `option-btn ${state.difficulty === d.id ? "active" : ""}`;
     btn.textContent = d.label;
-    btn.onclick = () => {
+    btn.addEventListener("click", () => {
       if (state.difficulty === d.id) return;
       state.difficulty = d.id;
       startNewGame(true);
-    };
+    });
     els.difficultyControls.appendChild(btn);
   });
   els.themeControls.innerHTML = "";
   THEMES.forEach((theme) => {
     const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = `option-btn theme-btn ${state.theme === theme.id ? "active" : ""}`;
     btn.innerHTML = `<span class="theme-preview" style="background:${theme.preview}"></span>${theme.name}`;
-    btn.onclick = () => {
+    btn.addEventListener("click", () => {
       state.theme = theme.id;
       applyTheme();
       renderControls();
-      drawSoon();
       updateStats();
-      saveProgress();
-    };
+      drawSoon();
+      queueSave();
+    });
     els.themeControls.appendChild(btn);
   });
   els.layoutControls.innerHTML = "";
   LAYOUTS.forEach((layout) => {
     const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = `option-btn ${state.layout === layout.id ? "active" : ""}`;
     btn.textContent = `${layout.name} • ${buildLayoutPositions(layout).length}`;
-    btn.onclick = () => {
+    btn.addEventListener("click", () => {
       if (state.layout === layout.id) return;
       state.layout = layout.id;
       startNewGame(true);
-    };
+    });
     els.layoutControls.appendChild(btn);
   });
 }
@@ -412,8 +438,8 @@ function startNewGame(preserveSettings = true) {
   renderControls();
   updateStats();
   setMessage(`Новая партия: ${getLayoutById(state.layout).name}, ${state.board.length} плиток.`, "success");
-  saveProgress();
   drawSoon();
+  queueSave();
 }
 
 function resizeCanvas() {
@@ -422,12 +448,10 @@ function resizeCanvas() {
   viewportRect = rect;
   const w = Math.max(1, Math.floor(rect.width));
   const h = Math.max(1, Math.floor(rect.height));
-  if (els.boardCanvas.width !== Math.floor(w * dpr) || els.boardCanvas.height !== Math.floor(h * dpr)) {
-    els.boardCanvas.width = Math.floor(w * dpr);
-    els.boardCanvas.height = Math.floor(h * dpr);
-    els.boardCanvas.style.width = `${w}px`;
-    els.boardCanvas.style.height = `${h}px`;
-  }
+  els.boardCanvas.width = Math.floor(w * dpr);
+  els.boardCanvas.height = Math.floor(h * dpr);
+  els.boardCanvas.style.width = `${w}px`;
+  els.boardCanvas.style.height = `${h}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.board.length) fitBoard(false);
   drawSoon();
@@ -445,21 +469,22 @@ function selectTile(tileId) {
   if (!state.selectedId) {
     state.selectedId = tileId;
     setMessage(`Выбрана плитка ${tile.face.label}.`, "default");
-    saveProgress();
     drawSoon();
+    queueSave();
     return;
   }
   if (state.selectedId === tileId) {
     state.selectedId = null;
     setMessage("Выбор снят.", "default");
-    saveProgress();
     drawSoon();
+    queueSave();
     return;
   }
   const first = state.board.find((t) => t.id === state.selectedId && !t.removed);
   if (!first || !isFreeTile(first)) {
     state.selectedId = tileId;
     drawSoon();
+    queueSave();
     return;
   }
   state.moves += 1;
@@ -482,8 +507,8 @@ function selectTile(tileId) {
     setMessage("Плитки не совпали.", "warning");
   }
   updateStats();
-  saveProgress();
   drawSoon();
+  queueSave();
 }
 
 function useHint() {
@@ -501,9 +526,9 @@ function useHint() {
   state.hintedPair = [a.id, b.id];
   state.selectedId = a.id;
   updateStats();
-  saveProgress();
   setMessage(`Подсказка: попробуй пару ${a.face.label}.`, "success");
   drawSoon();
+  queueSave();
 }
 
 function sendResult() {
@@ -522,17 +547,15 @@ function sendResult() {
 }
 
 function screenToWorld(screenX, screenY) {
-  const x = (screenX - state.camera.x) / state.camera.zoom;
-  const y = (screenY - state.camera.y) / state.camera.zoom;
-  return { x, y };
+  return {
+    x: (screenX - state.camera.x) / state.camera.zoom,
+    y: (screenY - state.camera.y) / state.camera.zoom,
+  };
 }
 
 function hitTile(screenX, screenY) {
   const p = screenToWorld(screenX, screenY);
-  const candidates = state.board
-    .filter((t) => !t.removed)
-    .slice()
-    .sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x);
+  const candidates = state.board.filter((t) => !t.removed).slice().sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x);
   let hit = null;
   for (const tile of candidates) {
     const pos = tileToPixel(tile);
@@ -541,84 +564,66 @@ function hitTile(screenX, screenY) {
   return hit;
 }
 
-function pointerPosition(ev) {
+function pointFromClient(clientX, clientY) {
   const rect = viewportRect || els.boardViewport.getBoundingClientRect();
-  return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
-function updatePointers(ev, add = true) {
-  if (add) pointerState.pointers.set(ev.pointerId, pointerPosition(ev));
-  else pointerState.pointers.delete(ev.pointerId);
+function getDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function onPointerDown(ev) {
-  ev.preventDefault();
-  els.boardCanvas.setPointerCapture(ev.pointerId);
-  updatePointers(ev, true);
-  if (pointerState.pointers.size === 1) {
-    const p = pointerState.pointers.get(ev.pointerId);
-    pointerState.dragStart = { pointerId: ev.pointerId, x: p.x, y: p.y, camX: state.camera.x, camY: state.camera.y, moved: false };
-    pointerState.mode = "tap-or-pan";
-  } else if (pointerState.pointers.size === 2) {
-    const pts = [...pointerState.pointers.values()];
-    const dx = pts[1].x - pts[0].x;
-    const dy = pts[1].y - pts[0].y;
-    pointerState.mode = "pinch";
-    pointerState.pinch = {
-      startDistance: Math.hypot(dx, dy),
-      startZoom: state.camera.zoom,
-      startCenter: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
-      worldAtCenter: screenToWorld((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2),
-    };
-  }
+function getCenter(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-function onPointerMove(ev) {
-  if (!pointerState.pointers.has(ev.pointerId)) return;
-  updatePointers(ev, true);
-  if (pointerState.mode === "pinch" && pointerState.pointers.size >= 2) {
-    const pts = [...pointerState.pointers.values()];
-    const dx = pts[1].x - pts[0].x;
-    const dy = pts[1].y - pts[0].y;
-    const centerX = (pts[0].x + pts[1].x) / 2;
-    const centerY = (pts[0].y + pts[1].y) / 2;
-    const zoom = clamp(pointerState.pinch.startZoom * (Math.hypot(dx, dy) / Math.max(1, pointerState.pinch.startDistance)), MIN_ZOOM, MAX_ZOOM);
-    state.camera.zoom = zoom;
-    state.camera.x = centerX - pointerState.pinch.worldAtCenter.x * zoom;
-    state.camera.y = centerY - pointerState.pinch.worldAtCenter.y * zoom;
+function beginDrag(x, y) {
+  gesture.dragging = true;
+  gesture.moved = false;
+  gesture.startX = x;
+  gesture.startY = y;
+  gesture.startCamX = state.camera.x;
+  gesture.startCamY = state.camera.y;
+}
+
+function updateDrag(x, y) {
+  if (!gesture.dragging) return;
+  const dx = x - gesture.startX;
+  const dy = y - gesture.startY;
+  if (Math.abs(dx) > 6 || Math.abs(dy) > 6) gesture.moved = true;
+  if (gesture.moved) {
+    state.camera.x = gesture.startCamX + dx;
+    state.camera.y = gesture.startCamY + dy;
     drawSoon();
-    return;
-  }
-  if (pointerState.mode === "tap-or-pan" && pointerState.dragStart?.pointerId === ev.pointerId) {
-    const p = pointerState.pointers.get(ev.pointerId);
-    const dx = p.x - pointerState.dragStart.x;
-    const dy = p.y - pointerState.dragStart.y;
-    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) pointerState.dragStart.moved = true;
-    if (pointerState.dragStart.moved) {
-      state.camera.x = pointerState.dragStart.camX + dx;
-      state.camera.y = pointerState.dragStart.camY + dy;
-      drawSoon();
-    }
   }
 }
 
-function onPointerUp(ev) {
-  const p = pointerState.pointers.get(ev.pointerId);
-  const drag = pointerState.dragStart;
-  if (pointerState.mode === "tap-or-pan" && drag?.pointerId === ev.pointerId && p && !drag.moved) {
-    const tile = hitTile(p.x, p.y);
-    if (tile) selectTile(tile.id);
-  }
-  updatePointers(ev, false);
-  if (pointerState.pointers.size === 0) {
-    pointerState.mode = null;
-    pointerState.dragStart = null;
-    pointerState.pinch = null;
-  } else if (pointerState.pointers.size === 1) {
-    const [id, pt] = [...pointerState.pointers.entries()][0];
-    pointerState.mode = "tap-or-pan";
-    pointerState.dragStart = { pointerId: id, x: pt.x, y: pt.y, camX: state.camera.x, camY: state.camera.y, moved: true };
-  }
+function endTap(x, y) {
+  if (gesture.moved) return;
+  const tile = hitTile(x, y);
+  if (tile) selectTile(tile.id);
+}
+
+function startPinch() {
+  if (gesture.active.size !== 2) return;
+  const pts = [...gesture.active.values()];
+  const center = getCenter(pts[0], pts[1]);
+  gesture.pinchStartDistance = Math.max(1, getDistance(pts[0], pts[1]));
+  gesture.pinchStartZoom = state.camera.zoom;
+  gesture.pinchWorldCenter = screenToWorld(center.x, center.y);
+  gesture.dragging = false;
+}
+
+function updatePinch() {
+  if (gesture.active.size !== 2) return;
+  const pts = [...gesture.active.values()];
+  const center = getCenter(pts[0], pts[1]);
+  const distance = Math.max(1, getDistance(pts[0], pts[1]));
+  const zoom = clamp(gesture.pinchStartZoom * (distance / gesture.pinchStartDistance), MIN_ZOOM, MAX_ZOOM);
+  state.camera.zoom = zoom;
+  state.camera.x = center.x - gesture.pinchWorldCenter.x * zoom;
+  state.camera.y = center.y - gesture.pinchWorldCenter.y * zoom;
+  drawSoon();
 }
 
 function zoomBy(factor) {
@@ -630,7 +635,78 @@ function zoomBy(factor) {
   state.camera.x = cx - world.x * state.camera.zoom;
   state.camera.y = cy - world.y * state.camera.zoom;
   drawSoon();
-  saveProgress();
+  queueSave();
+}
+
+function onCanvasClick(ev) {
+  const p = pointFromClient(ev.clientX, ev.clientY);
+  endTap(p.x, p.y);
+}
+
+function onTouchStart(ev) {
+  if (ev.target !== els.boardCanvas) return;
+  for (const touch of ev.changedTouches) {
+    gesture.active.set(touch.identifier, pointFromClient(touch.clientX, touch.clientY));
+  }
+  if (gesture.active.size === 1) {
+    const only = [...gesture.active.values()][0];
+    beginDrag(only.x, only.y);
+  } else if (gesture.active.size === 2) {
+    startPinch();
+  }
+  ev.preventDefault();
+}
+
+function onTouchMove(ev) {
+  if (!gesture.active.size) return;
+  for (const touch of ev.changedTouches) {
+    gesture.active.set(touch.identifier, pointFromClient(touch.clientX, touch.clientY));
+  }
+  if (gesture.active.size === 1) {
+    const only = [...gesture.active.values()][0];
+    updateDrag(only.x, only.y);
+  } else if (gesture.active.size === 2) {
+    updatePinch();
+  }
+  ev.preventDefault();
+}
+
+function onTouchEnd(ev) {
+  const ended = [];
+  for (const touch of ev.changedTouches) {
+    const pt = gesture.active.get(touch.identifier);
+    if (pt) ended.push(pt);
+    gesture.active.delete(touch.identifier);
+  }
+  if (gesture.active.size === 0 && ended[0]) {
+    endTap(ended[0].x, ended[0].y);
+    gesture.dragging = false;
+  } else if (gesture.active.size === 1) {
+    const only = [...gesture.active.values()][0];
+    beginDrag(only.x, only.y);
+  }
+  queueSave();
+  ev.preventDefault();
+}
+
+function onMouseDown(ev) {
+  if (ev.button !== 0) return;
+  const p = pointFromClient(ev.clientX, ev.clientY);
+  beginDrag(p.x, p.y);
+}
+
+function onMouseMove(ev) {
+  if (!gesture.dragging) return;
+  const p = pointFromClient(ev.clientX, ev.clientY);
+  updateDrag(p.x, p.y);
+}
+
+function onMouseUp(ev) {
+  if (!gesture.dragging) return;
+  const p = pointFromClient(ev.clientX, ev.clientY);
+  endTap(p.x, p.y);
+  gesture.dragging = false;
+  queueSave();
 }
 
 function onWheel(ev) {
@@ -713,22 +789,20 @@ function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
 
 function draw() {
   rafPending = false;
-  resizeCanvasIfNeededQuick();
+  const rect = els.boardViewport.getBoundingClientRect();
+  if (!viewportRect || rect.width !== viewportRect.width || rect.height !== viewportRect.height) {
+    resizeCanvas();
+    return;
+  }
   const width = els.boardCanvas.clientWidth || 1;
   const height = els.boardCanvas.clientHeight || 1;
   ctx.clearRect(0, 0, width, height);
-
   ctx.save();
   ctx.translate(state.camera.x, state.camera.y);
   ctx.scale(state.camera.zoom, state.camera.zoom);
   const visible = state.board.filter((t) => !t.removed).slice().sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x);
   for (const tile of visible) drawTile(tile);
   ctx.restore();
-}
-
-function resizeCanvasIfNeededQuick() {
-  const rect = els.boardViewport.getBoundingClientRect();
-  if (!viewportRect || rect.width !== viewportRect.width || rect.height !== viewportRect.height) resizeCanvas();
 }
 
 function drawSoon() {
@@ -743,16 +817,24 @@ els.restartBtn.addEventListener("click", () => startNewGame(true));
 els.sendResultBtn.addEventListener("click", sendResult);
 els.zoomInBtn.addEventListener("click", () => zoomBy(1.12));
 els.zoomOutBtn.addEventListener("click", () => zoomBy(0.88));
-els.recenterBtn.addEventListener("click", () => { fitBoard(false); drawSoon(); saveProgress(); });
-els.boardCanvas.addEventListener("pointerdown", onPointerDown, { passive: false });
-els.boardCanvas.addEventListener("pointermove", onPointerMove, { passive: false });
-els.boardCanvas.addEventListener("pointerup", onPointerUp, { passive: false });
-els.boardCanvas.addEventListener("pointercancel", onPointerUp, { passive: false });
+els.recenterBtn.addEventListener("click", () => {
+  fitBoard(false);
+  drawSoon();
+  queueSave();
+});
+
+els.boardCanvas.addEventListener("click", onCanvasClick);
+els.boardCanvas.addEventListener("touchstart", onTouchStart, { passive: false });
+els.boardCanvas.addEventListener("touchmove", onTouchMove, { passive: false });
+els.boardCanvas.addEventListener("touchend", onTouchEnd, { passive: false });
+els.boardCanvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
+els.boardCanvas.addEventListener("mousedown", onMouseDown);
+window.addEventListener("mousemove", onMouseMove);
+window.addEventListener("mouseup", onMouseUp);
 els.boardCanvas.addEventListener("wheel", onWheel, { passive: false });
 window.addEventListener("resize", resizeCanvas);
 
-afterInit();
-function afterInit() {
+(function init() {
   applyTheme();
   renderControls();
   if (restoreProgress()) {
@@ -765,4 +847,4 @@ function afterInit() {
   }
   resizeCanvas();
   drawSoon();
-}
+})();
