@@ -445,6 +445,7 @@ function startNewGame({ preserveSettings = true } = {}) {
   state.board = buildSolvableBoard(state.layout);
   state.startedAt = Date.now();
   state.seed = Math.random().toString(36).slice(2);
+  state.introAnimation = true;
   clearSavedProgress();
   updateAvailablePairs();
   applyTheme();
@@ -531,16 +532,28 @@ function computeBoardBounds() {
     boardStageEl.style.width = "100%";
     boardStageEl.style.height = "420px";
     appShell.style.setProperty("--board-scale", "1");
+    state.boardMetrics = { minLeft: 0, minTop: 0, paddingX: 28, paddingY: 36 };
     return { width: 760, height: 420 };
   }
 
-  const maxX = Math.max(...state.board.map((tile) => tile.x));
-  const maxY = Math.max(...state.board.map((tile) => tile.y));
-  const maxZ = Math.max(...state.board.map((tile) => tile.z));
-  const width = (maxX / 2) * STEP_X + TILE_W + maxZ * LEVEL_OFFSET_X + 40;
-  const height = (maxY / 2) * STEP_Y + TILE_H + maxZ * LEVEL_OFFSET_Y + 30;
+  const positions = activeTiles.map((tile) => ({
+    left: (tile.x / 2) * STEP_X + tile.z * LEVEL_OFFSET_X,
+    top: (tile.y / 2) * STEP_Y - tile.z * LEVEL_OFFSET_Y,
+    right: (tile.x / 2) * STEP_X + tile.z * LEVEL_OFFSET_X + TILE_W,
+    bottom: (tile.y / 2) * STEP_Y - tile.z * LEVEL_OFFSET_Y + TILE_H,
+  }));
+
+  const minLeft = Math.min(...positions.map((pos) => pos.left));
+  const minTop = Math.min(...positions.map((pos) => pos.top));
+  const maxRight = Math.max(...positions.map((pos) => pos.right));
+  const maxBottom = Math.max(...positions.map((pos) => pos.bottom));
+  const paddingX = 28;
+  const paddingY = 36;
+  const width = maxRight - minLeft + paddingX * 2;
+  const height = maxBottom - minTop + paddingY * 2;
   const finalWidth = Math.max(width, 760);
   const finalHeight = Math.max(height, 420);
+  state.boardMetrics = { minLeft, minTop, paddingX, paddingY };
   boardEl.style.width = `${finalWidth}px`;
   boardEl.style.height = `${finalHeight}px`;
   return { width: finalWidth, height: finalHeight };
@@ -554,12 +567,12 @@ function fitBoardToViewport(bounds) {
   const widthScale = viewportWidth / bounds.width;
   const heightScale = viewportHeight / bounds.height;
   const isPhone = window.innerWidth <= 640;
-  const scale = Math.min(widthScale, heightScale, isPhone ? 0.96 : 1);
-  const safeScale = Math.max(scale, isPhone ? 0.42 : 0.6);
+  const scale = Math.min(widthScale, heightScale, isPhone ? 0.98 : 1);
+  const safeScale = Math.max(scale, isPhone ? 0.34 : 0.58);
 
   appShell.style.setProperty("--board-scale", String(safeScale));
-  boardStageEl.style.width = `${Math.max(bounds.width * safeScale, viewportWidth)}px`;
-  boardStageEl.style.height = `${Math.max(bounds.height * safeScale, viewportHeight)}px`;
+  boardStageEl.style.width = `${viewportWidth}px`;
+  boardStageEl.style.height = `${viewportHeight}px`;
 }
 
 function renderBoard() {
@@ -582,10 +595,15 @@ function renderBoard() {
       if (state.selectedId === tile.id) btn.classList.add("selected");
       if (hintedIds.has(tile.id)) btn.classList.add("hint");
       if (animatingIds.has(tile.id)) btn.classList.add("removing");
-      btn.style.left = `${(tile.x / 2) * STEP_X + tile.z * LEVEL_OFFSET_X}px`;
-      btn.style.top = `${(tile.y / 2) * STEP_Y - tile.z * LEVEL_OFFSET_Y}px`;
+      if (state.introAnimation) btn.classList.add("intro");
+      const metrics = state.boardMetrics || { minLeft: 0, minTop: 0, paddingX: 28, paddingY: 36 };
+      const tileLeft = (tile.x / 2) * STEP_X + tile.z * LEVEL_OFFSET_X - metrics.minLeft + metrics.paddingX;
+      const tileTop = (tile.y / 2) * STEP_Y - tile.z * LEVEL_OFFSET_Y - metrics.minTop + metrics.paddingY;
+      btn.style.left = `${tileLeft}px`;
+      btn.style.top = `${tileTop}px`;
       btn.style.zIndex = String(20 + tile.z * 20 + tile.y);
       btn.setAttribute("aria-label", tile.face.label);
+      btn.dataset.tileId = tile.id;
       btn.innerHTML = `
         <span class="tile-shadow-stack"></span>
         <span class="tile-side tile-side-right"></span>
@@ -599,6 +617,12 @@ function renderBoard() {
       btn.addEventListener("click", () => onTileClick(tile.id));
       boardEl.appendChild(btn);
     });
+
+  if (state.introAnimation) {
+    window.setTimeout(() => {
+      state.introAnimation = false;
+    }, 280);
+  }
 }
 
 function onTileClick(tileId) {
@@ -695,11 +719,13 @@ function useHint() {
   const [a, b] = pairs[0];
   state.hintsLeft -= 1;
   state.hintedPair = [a.id, b.id];
-  state.selectedId = null;
+  state.selectedId = a.id;
   renderBoard();
   updateStats();
   saveProgress();
-  setMessage(`Подсказка: попробуй пару ${a.face.label}. Осталось подсказок: ${state.hintsLeft}.`, "success");
+  const firstHintTile = boardEl.querySelector(`[data-tile-id="${a.id}"]`);
+  firstHintTile?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+  setMessage(`Подсказка: выделена свободная пара ${a.face.label}. Осталось подсказок: ${state.hintsLeft}.`, "success");
 }
 
 function sendResult() {

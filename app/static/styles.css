@@ -125,13 +125,16 @@ body {
     position: relative;
     width: 100%;
     height: 100%;
-    min-width: fit-content;
-    min-height: fit-content;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    box-sizing: border-box;
 }
 .board {
     position: relative;
-    margin: 0 auto;
-    transform-origin: top center;
+    margin: 0;
+    transform-origin: center center;
     transform: scale(var(--board-scale));
 }
 
@@ -146,7 +149,6 @@ body {
     overflow: visible;
     transition: transform 180ms ease, filter 180ms ease, opacity 180ms ease;
     transform-origin: center center;
-    animation: tileRise 240ms ease both;
 }
 .tile-shadow-stack {
     position: absolute;
@@ -236,6 +238,7 @@ body {
 .tile.blocked .tile-face::before { background: linear-gradient(180deg, rgba(40,50,68,0.18), rgba(20,20,20,0.12)); }
 .tile.hint .tile-face { box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.26), 0 12px 18px rgba(21,15,7,0.22), inset 0 1px 0 rgba(255,255,255,0.94), inset 0 -3px 8px rgba(138, 116, 79, 0.2); }
 .tile.removing { animation: tileRemove 330ms ease forwards; pointer-events: none; }
+.tile.intro { animation: tileRise 240ms ease both; }
 
 .message {
     padding: 12px 14px;
