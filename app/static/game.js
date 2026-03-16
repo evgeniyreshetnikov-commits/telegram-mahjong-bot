@@ -450,7 +450,7 @@ function startNewGame({ preserveSettings = true } = {}) {
   updateAvailablePairs();
   applyTheme();
   renderControls();
-  renderBoard();
+  renderBoard({ resetView: true });
   updateStats();
   const layout = getLayoutById(state.layout);
   setMessage(`Новая раскладка «${layout.name}»: ${state.board.length} плиток, проходимость гарантирована.`, "success");
@@ -524,15 +524,13 @@ function renderControls() {
   });
 }
 
+
 function computeBoardBounds() {
   const activeTiles = state.board.filter((tile) => !tile.removed);
   if (!activeTiles.length) {
-    boardEl.style.width = "100%";
+    state.boardMetrics = { minLeft: 0, minTop: 0, paddingX: 28, paddingY: 36, width: 760, height: 420 };
+    boardEl.style.width = "760px";
     boardEl.style.height = "420px";
-    boardStageEl.style.width = "100%";
-    boardStageEl.style.height = "420px";
-    appShell.style.setProperty("--board-scale", "1");
-    state.boardMetrics = { minLeft: 0, minTop: 0, paddingX: 28, paddingY: 36 };
     return { width: 760, height: 420 };
   }
 
@@ -549,38 +547,138 @@ function computeBoardBounds() {
   const maxBottom = Math.max(...positions.map((pos) => pos.bottom));
   const paddingX = 24;
   const paddingY = 28;
-  const width = maxRight - minLeft + paddingX * 2;
-  const height = maxBottom - minTop + paddingY * 2;
-  const finalWidth = Math.max(width, 320);
-  const finalHeight = Math.max(height, 260);
-  state.boardMetrics = { minLeft, minTop, paddingX, paddingY };
-  boardEl.style.width = `${finalWidth}px`;
-  boardEl.style.height = `${finalHeight}px`;
-  return { width: finalWidth, height: finalHeight };
+  const width = Math.max(maxRight - minLeft + paddingX * 2, 320);
+  const height = Math.max(maxBottom - minTop + paddingY * 2, 260);
+  state.boardMetrics = { minLeft, minTop, paddingX, paddingY, width, height };
+  boardEl.style.width = `${width}px`;
+  boardEl.style.height = `${height}px`;
+  return { width, height };
 }
 
-function fitBoardToViewport(bounds) {
-  const viewportWidth = Math.max(0, boardViewportEl.clientWidth - 6);
-  const viewportHeight = Math.max(0, boardViewportEl.clientHeight - 6);
+function ensureViewState() {
+  if (!state.view) {
+    state.view = {
+      fitScale: 1,
+      userScale: 1,
+      minScale: 0.7,
+      maxScale: 1.8,
+      panX: 0,
+      panY: 0,
+      raf: 0,
+      pointers: new Map(),
+      gesture: null,
+    };
+  }
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getCombinedScale() {
+  ensureViewState();
+  return state.view.fitScale * state.view.userScale;
+}
+
+function clampPan() {
+  ensureViewState();
+  const viewportWidth = Math.max(0, boardViewportEl.clientWidth - 8);
+  const viewportHeight = Math.max(0, boardViewportEl.clientHeight - 8);
+  const metrics = state.boardMetrics || { width: viewportWidth, height: viewportHeight };
+  const scaledWidth = metrics.width * getCombinedScale();
+  const scaledHeight = metrics.height * getCombinedScale();
+  const maxX = Math.max(0, (scaledWidth - viewportWidth) / 2 + 12);
+  const maxY = Math.max(0, (scaledHeight - viewportHeight) / 2 + 12);
+  state.view.panX = clamp(state.view.panX, -maxX, maxX);
+  state.view.panY = clamp(state.view.panY, -maxY, maxY);
+}
+
+function applyBoardTransform() {
+  ensureViewState();
+  if (state.view.raf) return;
+  state.view.raf = requestAnimationFrame(() => {
+    state.view.raf = 0;
+    clampPan();
+    const scale = getCombinedScale();
+    boardEl.style.transform = `translate3d(calc(-50% + ${state.view.panX}px), calc(-50% + ${state.view.panY}px), 0) scale(${scale})`;
+  });
+}
+
+function fitBoardToViewport(bounds, { resetUserScale = false } = {}) {
+  ensureViewState();
+  const viewportWidth = Math.max(0, boardViewportEl.clientWidth - 8);
+  const viewportHeight = Math.max(0, boardViewportEl.clientHeight - 8);
   if (!viewportWidth || !viewportHeight) return;
 
   const widthScale = viewportWidth / bounds.width;
   const heightScale = viewportHeight / bounds.height;
   const isPhone = window.innerWidth <= 640;
-  const scale = Math.min(widthScale, heightScale, isPhone ? 0.96 : 1);
-  const safeScale = Math.max(scale, isPhone ? 0.5 : 0.62);
-
-  appShell.style.setProperty("--board-scale", String(safeScale));
-  boardStageEl.style.width = `${viewportWidth}px`;
-  boardStageEl.style.height = `${viewportHeight}px`;
+  state.view.fitScale = Math.min(widthScale, heightScale, isPhone ? 0.98 : 1);
+  state.view.minScale = isPhone ? 0.72 : 0.85;
+  state.view.maxScale = isPhone ? 2.2 : 2.8;
+  if (resetUserScale) {
+    state.view.userScale = 1;
+    state.view.panX = 0;
+    state.view.panY = 0;
+  }
+  clampPan();
+  applyBoardTransform();
 }
 
-function renderBoard() {
-  const bounds = computeBoardBounds();
-  fitBoardToViewport(bounds);
-  boardEl.innerHTML = "";
-  updateAvailablePairs();
+function createTileElement(tile, freeIds, hintedIds, animatingIds) {
+  const btn = document.createElement("button");
+  btn.className = "tile";
+  btn.type = "button";
+  btn.dataset.tileId = tile.id;
+  btn.setAttribute("aria-label", tile.face.label);
+  const metrics = state.boardMetrics || { minLeft: 0, minTop: 0, paddingX: 28, paddingY: 36 };
+  const tileLeft = (tile.x / 2) * STEP_X + tile.z * LEVEL_OFFSET_X - metrics.minLeft + metrics.paddingX;
+  const tileTop = (tile.y / 2) * STEP_Y - tile.z * LEVEL_OFFSET_Y - metrics.minTop + metrics.paddingY;
+  btn.style.left = `${tileLeft}px`;
+  btn.style.top = `${tileTop}px`;
+  btn.style.zIndex = String(20 + tile.z * 20 + tile.y);
+  btn.innerHTML = `
+    <span class="tile-shadow-stack"></span>
+    <span class="tile-side tile-side-right"></span>
+    <span class="tile-side tile-side-bottom"></span>
+    <span class="tile-face">
+      <span class="tile-corner top-left tone-${tile.face.tone}">${tile.face.glyph}</span>
+      <span class="tile-glyph tone-${tile.face.tone}">${tile.face.glyph}</span>
+      <span class="tile-corner bottom-right tone-${tile.face.tone}">${tile.face.glyph}</span>
+    </span>
+  `;
+  if (!freeIds.has(tile.id)) btn.classList.add("blocked");
+  if (state.selectedId === tile.id) btn.classList.add("selected");
+  if (hintedIds.has(tile.id)) btn.classList.add("hint");
+  if (animatingIds.has(tile.id)) btn.classList.add("removing");
+  if (state.introAnimation) btn.classList.add("intro");
+  return btn;
+}
 
+function refreshTileStates() {
+  updateAvailablePairs();
+  const freeIds = new Set(getFreeTiles().map((tile) => tile.id));
+  const hintedIds = new Set(state.hintedPair);
+  const animatingIds = new Set(state.animatingMatches);
+  state.board.forEach((tile) => {
+    const el = state.tileElements?.get(tile.id);
+    if (!el) return;
+    const hidden = tile.removed;
+    el.classList.toggle("hidden", hidden);
+    el.disabled = hidden;
+    if (hidden) return;
+    el.classList.toggle("blocked", !freeIds.has(tile.id));
+    el.classList.toggle("selected", state.selectedId === tile.id);
+    el.classList.toggle("hint", hintedIds.has(tile.id));
+    el.classList.toggle("removing", animatingIds.has(tile.id));
+  });
+}
+
+function renderBoard({ resetView = false } = {}) {
+  const bounds = computeBoardBounds();
+  boardEl.innerHTML = "";
+  state.tileElements = new Map();
+  updateAvailablePairs();
   const freeIds = new Set(getFreeTiles().map((tile) => tile.id));
   const hintedIds = new Set(state.hintedPair);
   const animatingIds = new Set(state.animatingMatches);
@@ -589,42 +687,25 @@ function renderBoard() {
     .filter((tile) => !tile.removed)
     .sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x)
     .forEach((tile) => {
-      const btn = document.createElement("button");
-      btn.className = "tile";
-      btn.type = "button";
-      if (!freeIds.has(tile.id)) btn.classList.add("blocked");
-      if (state.selectedId === tile.id) btn.classList.add("selected");
-      if (hintedIds.has(tile.id)) btn.classList.add("hint");
-      if (animatingIds.has(tile.id)) btn.classList.add("removing");
-      if (state.introAnimation) btn.classList.add("intro");
-      const metrics = state.boardMetrics || { minLeft: 0, minTop: 0, paddingX: 28, paddingY: 36 };
-      const tileLeft = (tile.x / 2) * STEP_X + tile.z * LEVEL_OFFSET_X - metrics.minLeft + metrics.paddingX;
-      const tileTop = (tile.y / 2) * STEP_Y - tile.z * LEVEL_OFFSET_Y - metrics.minTop + metrics.paddingY;
-      btn.style.left = `${tileLeft}px`;
-      btn.style.top = `${tileTop}px`;
-      btn.style.zIndex = String(20 + tile.z * 20 + tile.y);
-      btn.setAttribute("aria-label", tile.face.label);
-      btn.dataset.tileId = tile.id;
-      btn.innerHTML = `
-        <span class="tile-shadow-stack"></span>
-        <span class="tile-side tile-side-right"></span>
-        <span class="tile-side tile-side-bottom"></span>
-        <span class="tile-face">
-          <span class="tile-corner top-left tone-${tile.face.tone}">${tile.face.glyph}</span>
-          <span class="tile-glyph tone-${tile.face.tone}">${tile.face.glyph}</span>
-          <span class="tile-corner bottom-right tone-${tile.face.tone}">${tile.face.glyph}</span>
-        </span>
-      `;
-      btn.addEventListener("pointerdown", (event) => event.preventDefault(), { passive: false });
-      btn.addEventListener("click", (event) => { event.preventDefault(); onTileClick(tile.id); });
+      const btn = createTileElement(tile, freeIds, hintedIds, animatingIds);
+      state.tileElements.set(tile.id, btn);
       boardEl.appendChild(btn);
     });
+
+  fitBoardToViewport(bounds, { resetUserScale: resetView });
 
   if (state.introAnimation) {
     window.setTimeout(() => {
       state.introAnimation = false;
+      state.tileElements?.forEach((el) => el.classList.remove("intro"));
     }, 280);
   }
+}
+
+function updateSelectionUI() {
+  refreshTileStates();
+  updateStats();
+  applyBoardTransform();
 }
 
 function onTileClick(tileId) {
@@ -639,7 +720,7 @@ function onTileClick(tileId) {
   if (state.selectedId === tileId) {
     state.selectedId = null;
     state.hintedPair = [];
-    renderBoard();
+    updateSelectionUI();
     saveProgress();
     return;
   }
@@ -647,7 +728,7 @@ function onTileClick(tileId) {
   if (!state.selectedId) {
     state.selectedId = tileId;
     state.hintedPair = [];
-    renderBoard();
+    updateSelectionUI();
     saveProgress();
     return;
   }
@@ -655,7 +736,7 @@ function onTileClick(tileId) {
   const selected = getTileById(state.selectedId);
   if (!selected || selected.removed) {
     state.selectedId = tileId;
-    renderBoard();
+    updateSelectionUI();
     saveProgress();
     return;
   }
@@ -666,7 +747,7 @@ function onTileClick(tileId) {
     state.animatingMatches = [selected.id, tile.id];
     state.score += DIFFICULTIES[state.difficulty].pairScore;
     state.selectedId = null;
-    renderBoard();
+    refreshTileStates();
     updateStats();
 
     window.setTimeout(() => {
@@ -675,9 +756,8 @@ function onTileClick(tileId) {
       });
       state.animatingMatches = [];
       state.hintedPair = [];
-      updateAvailablePairs();
-      checkGameState();
       renderBoard();
+      checkGameState();
       updateStats();
       saveProgress();
     }, REMOVE_ANIMATION_MS);
@@ -688,8 +768,7 @@ function onTileClick(tileId) {
   state.selectedId = tileId;
   state.hintedPair = [];
   setMessage("Это разные плитки. Попробуй найти совпадающую свободную пару.", "warning");
-  renderBoard();
-  updateStats();
+  updateSelectionUI();
   saveProgress();
 }
 
@@ -722,10 +801,118 @@ function useHint() {
   state.hintsLeft -= 1;
   state.hintedPair = [a.id, b.id];
   state.selectedId = a.id;
-  renderBoard();
-  updateStats();
+  updateSelectionUI();
   saveProgress();
   setMessage(`Подсказка: выделена свободная пара ${a.face.label}. Осталось подсказок: ${state.hintsLeft}.`, "success");
+}
+
+function changeZoom(delta) {
+  ensureViewState();
+  state.view.userScale = clamp(state.view.userScale + delta, state.view.minScale, state.view.maxScale);
+  applyBoardTransform();
+}
+
+function resetView() {
+  ensureViewState();
+  state.view.userScale = 1;
+  state.view.panX = 0;
+  state.view.panY = 0;
+  applyBoardTransform();
+}
+
+function getDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function getCenter(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function onViewportPointerDown(event) {
+  ensureViewState();
+  boardViewportEl.setPointerCapture?.(event.pointerId);
+  state.view.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  if (state.view.pointers.size === 2) {
+    const [p1, p2] = [...state.view.pointers.values()];
+    state.view.gesture = {
+      type: "pinch",
+      startDistance: getDistance(p1, p2),
+      startScale: state.view.userScale,
+      startPanX: state.view.panX,
+      startPanY: state.view.panY,
+      startCenter: getCenter(p1, p2),
+    };
+    return;
+  }
+
+  if (state.view.pointers.size === 1) {
+    state.view.gesture = {
+      type: "pan",
+      startX: event.clientX,
+      startY: event.clientY,
+      startPanX: state.view.panX,
+      startPanY: state.view.panY,
+      moved: false,
+    };
+  }
+}
+
+function onViewportPointerMove(event) {
+  ensureViewState();
+  if (!state.view.pointers.has(event.pointerId)) return;
+  state.view.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  if (state.view.pointers.size === 2) {
+    const [p1, p2] = [...state.view.pointers.values()];
+    if (!state.view.gesture || state.view.gesture.type !== "pinch") {
+      state.view.gesture = {
+        type: "pinch",
+        startDistance: getDistance(p1, p2),
+        startScale: state.view.userScale,
+        startPanX: state.view.panX,
+        startPanY: state.view.panY,
+        startCenter: getCenter(p1, p2),
+      };
+    }
+    const center = getCenter(p1, p2);
+    const distance = Math.max(20, getDistance(p1, p2));
+    const scaleFactor = distance / Math.max(20, state.view.gesture.startDistance);
+    state.view.userScale = clamp(state.view.gesture.startScale * scaleFactor, state.view.minScale, state.view.maxScale);
+    state.view.panX = state.view.gesture.startPanX + (center.x - state.view.gesture.startCenter.x);
+    state.view.panY = state.view.gesture.startPanY + (center.y - state.view.gesture.startCenter.y);
+    applyBoardTransform();
+    return;
+  }
+
+  if (state.view.gesture?.type === "pan") {
+    const dx = event.clientX - state.view.gesture.startX;
+    const dy = event.clientY - state.view.gesture.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) state.view.gesture.moved = true;
+    state.view.panX = state.view.gesture.startPanX + dx;
+    state.view.panY = state.view.gesture.startPanY + dy;
+    applyBoardTransform();
+  }
+}
+
+function onViewportPointerUp(event) {
+  ensureViewState();
+  state.view.pointers.delete(event.pointerId);
+  if (state.view.pointers.size === 0) {
+    state.view.gesture = null;
+    return;
+  }
+  if (state.view.pointers.size === 1) {
+    const [p] = [...state.view.pointers.values()];
+    state.view.gesture = {
+      type: "pan",
+      startX: p.x,
+      startY: p.y,
+      startPanX: state.view.panX,
+      startPanY: state.view.panY,
+      moved: false,
+    };
+  }
 }
 
 function sendResult() {
@@ -753,21 +940,42 @@ restartBtn.addEventListener("click", () => startNewGame());
 hintBtn.addEventListener("click", useHint);
 sendResultBtn.addEventListener("click", sendResult);
 
+boardEl.addEventListener("click", (event) => {
+  const button = event.target.closest(".tile");
+  if (!button) return;
+  onTileClick(button.dataset.tileId);
+});
+
+boardViewportEl.addEventListener("pointerdown", onViewportPointerDown);
+boardViewportEl.addEventListener("pointermove", onViewportPointerMove);
+boardViewportEl.addEventListener("pointerup", onViewportPointerUp);
+boardViewportEl.addEventListener("pointercancel", onViewportPointerUp);
+boardViewportEl.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  changeZoom(event.deltaY < 0 ? 0.08 : -0.08);
+}, { passive: false });
+
+const zoomInBtn = document.getElementById("zoomInBtn");
+const zoomOutBtn = document.getElementById("zoomOutBtn");
+const recenterBtn = document.getElementById("recenterBtn");
+zoomInBtn?.addEventListener("click", () => changeZoom(0.12));
+zoomOutBtn?.addEventListener("click", () => changeZoom(-0.12));
+recenterBtn?.addEventListener("click", resetView);
+
 renderControls();
 applyTheme();
 
 if (restoreSavedProgress()) {
+  ensureViewState();
   applyTheme();
   renderControls();
-  updateAvailablePairs();
-  renderBoard();
+  renderBoard({ resetView: true });
   updateStats();
   checkGameState();
   setMessage("Прогресс восстановлен из сохранения на устройстве. Можно продолжать партию.", "success");
 } else {
   startNewGame({ preserveSettings: false });
 }
-
 
 window.addEventListener("resize", () => {
   const bounds = computeBoardBounds();
