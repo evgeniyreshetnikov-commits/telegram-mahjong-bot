@@ -96,7 +96,7 @@ body {
 }
 
 .board-shell {
-    padding: 12px;
+    padding: 10px;
     background-image: var(--table-bg);
     overflow: hidden;
 }
@@ -116,8 +116,8 @@ body {
     position: relative;
     width: 100%;
     min-height: 300px;
-    height: min(64vh, 720px);
-    overflow: auto;
+    height: min(62vh, 680px);
+    overflow: hidden;
     border-radius: 18px;
     background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(255,255,255,0.04));
 }
@@ -125,30 +125,31 @@ body {
     position: relative;
     width: 100%;
     height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px;
-    box-sizing: border-box;
+    overflow: hidden;
 }
 .board {
-    position: relative;
+    position: absolute;
+    left: 50%;
+    top: 50%;
     margin: 0;
     transform-origin: center center;
-    transform: scale(var(--board-scale));
+    transform: translate(-50%, -50%) scale(var(--board-scale));
+    will-change: transform;
 }
 
 .tile {
     position: absolute;
-    width: 78px;
-    height: 98px;
+    width: 64px;
+    height: 82px;
     padding: 0;
     border: none;
     background: transparent;
     cursor: pointer;
     overflow: visible;
-    transition: transform 180ms ease, filter 180ms ease, opacity 180ms ease;
+    transition: transform 150ms ease, filter 150ms ease, opacity 150ms ease;
     transform-origin: center center;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 .tile-shadow-stack {
     position: absolute;
@@ -205,7 +206,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 40px;
+    font-size: 32px;
     font-weight: 800;
     line-height: 1;
     text-shadow: 0 1px 0 rgba(255,255,255,0.78), 0 5px 12px rgba(61, 40, 18, 0.14);
@@ -213,7 +214,7 @@ body {
 }
 .tile-corner {
     position: absolute;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 800;
     line-height: 1;
     opacity: 0.82;
@@ -227,9 +228,9 @@ body {
 .tone-teal { color: #0f766e; }
 .tone-violet { color: #7c3aed; }
 
-.tile:hover { transform: translateY(-4px) scale(1.03); }
+.tile:hover { transform: translateY(-2px) scale(1.02); }
 .tile.selected {
-    transform: translateY(-10px) scale(1.12);
+    transform: translateY(-6px) scale(1.08);
     filter: drop-shadow(0 0 0.55rem rgba(124, 156, 255, 0.45));
 }
 .tile.selected .tile-face { box-shadow: 0 18px 28px rgba(21,15,7,0.28), 0 0 0 4px rgba(124, 156, 255, 0.20), inset 0 1px 0 rgba(255,255,255,0.96), inset 0 -3px 8px rgba(138, 116, 79, 0.2); }
@@ -319,4 +320,18 @@ body {
     .board-viewport { height: 48vh; }
     .tile.selected { transform: translateY(-8px) scale(1.08); }
     .segmented > .option-btn { font-size: 14px; }
+}
+
+
+@media (max-width: 640px) {
+    .app-shell { padding: 10px; gap: 10px; }
+    .topbar h1 { font-size: 22px; }
+    .stats { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .stat-card { min-height: 76px; padding: 10px; }
+    .stat-card strong { font-size: 22px; }
+    .board-shell { padding: 8px; }
+    .board-toolbar { margin-bottom: 8px; }
+    .board-viewport { min-height: 260px; height: 56vh; }
+    .chip-badge { font-size: 11px; padding: 5px 8px; }
+    .footer-actions { position: sticky; bottom: 0; background: linear-gradient(180deg, rgba(16,21,34,0), rgba(16,21,34,0.94) 28%); padding-top: 8px; }
 }

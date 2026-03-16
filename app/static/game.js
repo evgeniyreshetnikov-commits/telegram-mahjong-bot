@@ -5,12 +5,12 @@ if (tg) {
 }
 
 const STORAGE_PREFIX = "telegram-mahjong-shanghai";
-const TILE_W = 78;
-const TILE_H = 98;
-const STEP_X = 42;
-const STEP_Y = 52;
-const LEVEL_OFFSET_X = 12;
-const LEVEL_OFFSET_Y = 10;
+const TILE_W = 64;
+const TILE_H = 82;
+const STEP_X = 34;
+const STEP_Y = 44;
+const LEVEL_OFFSET_X = 9;
+const LEVEL_OFFSET_Y = 8;
 const REMOVE_ANIMATION_MS = 340;
 
 const SYMBOLS = [
@@ -547,12 +547,12 @@ function computeBoardBounds() {
   const minTop = Math.min(...positions.map((pos) => pos.top));
   const maxRight = Math.max(...positions.map((pos) => pos.right));
   const maxBottom = Math.max(...positions.map((pos) => pos.bottom));
-  const paddingX = 28;
-  const paddingY = 36;
+  const paddingX = 24;
+  const paddingY = 28;
   const width = maxRight - minLeft + paddingX * 2;
   const height = maxBottom - minTop + paddingY * 2;
-  const finalWidth = Math.max(width, 760);
-  const finalHeight = Math.max(height, 420);
+  const finalWidth = Math.max(width, 320);
+  const finalHeight = Math.max(height, 260);
   state.boardMetrics = { minLeft, minTop, paddingX, paddingY };
   boardEl.style.width = `${finalWidth}px`;
   boardEl.style.height = `${finalHeight}px`;
@@ -560,15 +560,15 @@ function computeBoardBounds() {
 }
 
 function fitBoardToViewport(bounds) {
-  const viewportWidth = boardViewportEl.clientWidth - 6;
-  const viewportHeight = boardViewportEl.clientHeight - 6;
+  const viewportWidth = Math.max(0, boardViewportEl.clientWidth - 6);
+  const viewportHeight = Math.max(0, boardViewportEl.clientHeight - 6);
   if (!viewportWidth || !viewportHeight) return;
 
   const widthScale = viewportWidth / bounds.width;
   const heightScale = viewportHeight / bounds.height;
   const isPhone = window.innerWidth <= 640;
-  const scale = Math.min(widthScale, heightScale, isPhone ? 0.98 : 1);
-  const safeScale = Math.max(scale, isPhone ? 0.34 : 0.58);
+  const scale = Math.min(widthScale, heightScale, isPhone ? 0.96 : 1);
+  const safeScale = Math.max(scale, isPhone ? 0.5 : 0.62);
 
   appShell.style.setProperty("--board-scale", String(safeScale));
   boardStageEl.style.width = `${viewportWidth}px`;
@@ -591,6 +591,7 @@ function renderBoard() {
     .forEach((tile) => {
       const btn = document.createElement("button");
       btn.className = "tile";
+      btn.type = "button";
       if (!freeIds.has(tile.id)) btn.classList.add("blocked");
       if (state.selectedId === tile.id) btn.classList.add("selected");
       if (hintedIds.has(tile.id)) btn.classList.add("hint");
@@ -614,7 +615,8 @@ function renderBoard() {
           <span class="tile-corner bottom-right tone-${tile.face.tone}">${tile.face.glyph}</span>
         </span>
       `;
-      btn.addEventListener("click", () => onTileClick(tile.id));
+      btn.addEventListener("pointerdown", (event) => event.preventDefault(), { passive: false });
+      btn.addEventListener("click", (event) => { event.preventDefault(); onTileClick(tile.id); });
       boardEl.appendChild(btn);
     });
 
@@ -723,8 +725,6 @@ function useHint() {
   renderBoard();
   updateStats();
   saveProgress();
-  const firstHintTile = boardEl.querySelector(`[data-tile-id="${a.id}"]`);
-  firstHintTile?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
   setMessage(`Подсказка: выделена свободная пара ${a.face.label}. Осталось подсказок: ${state.hintsLeft}.`, "success");
 }
 
