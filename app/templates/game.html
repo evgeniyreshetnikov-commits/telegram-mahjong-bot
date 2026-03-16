@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Telegram Mahjong</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="app-shell" id="appShell">
+        <header class="topbar">
+            <div>
+                <h1>Маджонг</h1>
+                <p>Telegram WebApp с режимами, фонами и раскладками</p>
+            </div>
+            <button id="restartBtn" class="ghost-btn">Новая игра</button>
+        </header>
+
+        <section class="control-panel">
+            <div class="panel-block">
+                <div class="panel-title-row">
+                    <h2>Режим игры</h2>
+                    <span id="difficultyBadge" class="chip-badge">Лёгкий</span>
+                </div>
+                <div id="difficultyControls" class="segmented"></div>
+            </div>
+
+            <div class="panel-block">
+                <div class="panel-title-row">
+                    <h2>Фон стола</h2>
+                    <span id="themeBadge" class="chip-badge">Classic Green</span>
+                </div>
+                <div id="themeControls" class="chip-grid"></div>
+            </div>
+
+            <div class="panel-block">
+                <div class="panel-title-row">
+                    <h2>Раскладка</h2>
+                    <span id="layoutBadge" class="chip-badge">Черепаха</span>
+                </div>
+                <div id="layoutControls" class="chip-grid"></div>
+            </div>
+        </section>
+
+        <section class="stats">
+            <div class="stat-card">
+                <span>Очки</span>
+                <strong id="score">0</strong>
+            </div>
+            <div class="stat-card">
+                <span>Ходы</span>
+                <strong id="moves">0</strong>
+            </div>
+            <div class="stat-card">
+                <span>Осталось плиток</span>
+                <strong id="tilesLeft">0</strong>
+            </div>
+            <div class="stat-card">
+                <span>Подсказки</span>
+                <strong id="hintsLeft">0</strong>
+            </div>
+        </section>
+
+        <section class="legend">
+            <p>
+                Собирай пары одинаковых свободных плиток. Теперь плитка свободна, только если её
+                <b>не перекрывает верхний слой</b> и у неё открыта <b>левая или правая сторона</b>.
+            </p>
+        </section>
+
+        <main>
+            <div class="board-shell">
+                <div id="board" class="board"></div>
+            </div>
+            <div id="message" class="message"></div>
+        </main>
+
+        <footer class="footer-actions">
+            <button id="hintBtn" class="ghost-btn">Подсказка</button>
+            <button id="sendResultBtn" class="primary-btn">Отправить результат в бот</button>
+        </footer>
+    </div>
+
+    <script>
+        window.APP_CONFIG = {
+            baseUrl: "{{ base_url }}"
+        };
+    </script>
+    <script src="/static/game.js"></script>
+</body>
+</html>
